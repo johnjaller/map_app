@@ -10,7 +10,7 @@ import OSM from 'ol/source/OSM.js';
 import VectorSource from 'ol/source/Vector';
 import { Fill, Stroke, Style, Text, Circle } from 'ol/style';
 import View from 'ol/View.js';
-import { useEffect, useRef, useState, useDeferredValue, useMemo, Fragment } from 'react';
+import { useEffect, useRef, useState, useDeferredValue, useMemo, Fragment, useTransition } from 'react';
 import { Card, Paper, List, ListItem, Typography, Accordion, AccordionSummary, AccordionDetails, Table, TableRow, TableCell, TableHead, TableBody, TextField } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fromLonLat } from 'ol/proj';
@@ -30,6 +30,7 @@ function App() {
   const [properties, setProperties] = useState<any>(null);
   const [list, setList] = useState<Array<any>>([]);
   const [selectItem, setSelectItem] = useState<string>('');
+  const [isPending, startTransition] = useTransition();
   useEffect(() => {
     let districtSOurce = new VectorSource({
 
@@ -199,26 +200,35 @@ function App() {
 
   useEffect(() => {
     fetch('https://geodata.gov.hk/gs/api/v1.0.0/geoDataQuery?q=%7Bv%3A%221%2E0%2E0%22%2Cid%3A%22b545518d-efe1-446d-8525-530b23047aba%22%2Clang%3A%22ALL%22%7D').then(data => data.json()).then(parsedData => {
-      if (deferredQuery) {
-        console.log('searching')
-        const filteredList = list.filter(item => {
+      startTransition(() => {
+        if (deferredQuery !== '') {
+          const filteredList = parsedData.features.filter((item: any) => {
           return !!item.properties['Facility Name'].toLowerCase().includes(query) || !!item.properties['設施名稱'].includes(query) || item.properties['District'].toLowerCase().includes(query) || !!item.properties['分區'].includes(query) || !!item.properties['地址'].includes(query) || !!item.properties.Address.toLowerCase().includes(query)
-        })
+          }).reduce((prev: any, next: any) => {
+            if (prev[next.properties.District]) {
+              prev[next.properties.District].push(next)
+              return prev
+            }
+            prev[next.properties.District] = [next]
+            return prev
+
+          }, {})
         setList(filteredList)
         return
       }
-      setList(parsedData.features)
-    })
-  }, [deferredQuery])
-  const sortedList = useMemo(() => list.reduce((prev, next) => {
-    if (prev[next.properties.District]) {
-      prev[next.properties.District].push(next)
-      return prev
-    }
-    prev[next.properties.District] = [next]
-    return prev
+        setList(parsedData.features.reduce((prev: any, next: any) => {
+          if (prev[next.properties.District]) {
+            prev[next.properties.District].push(next)
+            return prev
+          }
+          prev[next.properties.District] = [next]
+          return prev
 
-  }, {}), [list])
+        }, {}))
+      })
+    });
+
+  }, [deferredQuery])
   return (
     <div className="container">
       <div style={{
@@ -251,13 +261,14 @@ function App() {
         </Typography>
         <TextField
           fullWidth
+          sx={{ marginY: 2 }}
           placeholder='Search'
           value={query}
           onChange={(evt) => setQuery(evt.target.value.toLowerCase())}
         />
         <List sx={{ overflowY: 'scroll', height: '90%', marginBottom: '100px', paddingX: 2 }}>
-
-          {Object.entries(sortedList).map(([key, value]: [string, any]) =>
+          {isPending && <div>Loading ...</div>}
+          {!isPending && Object.entries(list).map(([key, value]: [string, any]) =>
             <Fragment key={key}>
               <Typography typography={'h5'}>
                 {key}
